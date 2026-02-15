@@ -102,6 +102,57 @@ textarea {
   gap: var(--space-2);
 }
 
+.room-label {
+  font-weight: 600;
+}
+
+.room-input {
+  width: min(220px, 40vw);
+}
+
+.room-error {
+  font-size: 0.85rem;
+}
+
+.user-menu {
+  position: relative;
+  margin-left: auto;
+}
+
+.user-menu-popover {
+  position: absolute;
+  top: calc(100% + 0.3rem);
+  right: 0;
+  width: min(320px, 80vw);
+  border: 1px solid var(--line-strong);
+  background: var(--bg);
+  padding: var(--space-2);
+  display: grid;
+  gap: var(--space-2);
+  z-index: 20;
+}
+
+.user-menu-title {
+  font-weight: 600;
+}
+
+.user-menu-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.room-list {
+  max-height: 180px;
+  overflow: auto;
+  display: grid;
+  gap: var(--space-1);
+}
+
+.room-list button {
+  text-align: left;
+}
+
 .workspace-grid {
   min-height: 0;
 }

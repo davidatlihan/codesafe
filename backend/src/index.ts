@@ -8,10 +8,17 @@ import { WebSocket, WebSocketServer } from 'ws';
 import * as decoding from 'lib0/decoding';
 import * as Y from 'yjs';
 import {
+  createProject,
+  createRoomRecord,
+  deleteProject,
   ensureDbConnection,
   findOrCreateUserByUsername,
+  listRooms,
+  listProjects,
   loadProjectState,
+  projectNameExists,
   persistProjectState,
+  renameProject,
   setProjectPermission
 } from './persistence.js';
 import type { Role } from './models.js';
@@ -122,6 +129,26 @@ function isValidRoomId(roomId: string): boolean {
   return /^[a-zA-Z0-9_-]{1,64}$/.test(roomId);
 }
 
+function randomRoomId(): string {
+  return `room-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function normalizeProjectName(raw: string): string {
+  return raw.trim().replace(/\s+/g, ' ').slice(0, 80);
+}
+
+function projectIdFromName(name: string): string {
+  const normalized = name
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
+  if (normalized.length > 0) {
+    return normalized;
+  }
+  return randomRoomId();
+}
+
 app.disable('x-powered-by');
 
 app.use(
@@ -210,6 +237,157 @@ app.post('/api/auth/login', async (req, res) => {
       role
     }
   });
+});
+
+app.get('/api/rooms', async (req, res) => {
+  const token = extractBearerToken(req.header('authorization'));
+  const user = token ? verifyToken(token) : null;
+  if (!user) {
+    res.status(401).json({ error: 'unauthorized' });
+    return;
+  }
+
+  const roomsList = await listRooms();
+  res.json({ rooms: roomsList });
+});
+
+app.post('/api/rooms', async (req, res) => {
+  const token = extractBearerToken(req.header('authorization'));
+  const user = token ? verifyToken(token) : null;
+  if (!user) {
+    res.status(401).json({ error: 'unauthorized' });
+    return;
+  }
+
+  const rawRoomId = typeof req.body?.roomId === 'string' ? req.body.roomId.trim() : '';
+  const roomName = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+  const roomId = rawRoomId.length > 0 ? rawRoomId : randomRoomId();
+  if (!isValidRoomId(roomId)) {
+    res.status(400).json({ error: 'invalid room id' });
+    return;
+  }
+
+  await createRoomRecord(roomId, roomName || roomId);
+  res.json({ room: { id: roomId, name: roomName || roomId } });
+});
+
+app.get('/api/projects', async (req, res) => {
+  const token = extractBearerToken(req.header('authorization'));
+  const user = token ? verifyToken(token) : null;
+  if (!user) {
+    res.status(401).json({ error: 'unauthorized' });
+    return;
+  }
+
+  const projects = await listProjects();
+  res.json({ projects });
+});
+
+app.post('/api/projects', async (req, res) => {
+  const token = extractBearerToken(req.header('authorization'));
+  const user = token ? verifyToken(token) : null;
+  if (!user) {
+    res.status(401).json({ error: 'unauthorized' });
+    return;
+  }
+
+  const rawName = typeof req.body?.name === 'string' ? req.body.name : '';
+  const name = normalizeProjectName(rawName);
+  if (!name) {
+    res.status(400).json({ error: 'project name is required' });
+    return;
+  }
+
+  if (await projectNameExists(name)) {
+    res.status(409).json({ error: 'project name already exists' });
+    return;
+  }
+
+  const requestedId = typeof req.body?.projectId === 'string' ? req.body.projectId.trim() : '';
+  const projectId = requestedId || `${projectIdFromName(name)}-${Math.random().toString(36).slice(2, 6)}`;
+  if (!isValidRoomId(projectId)) {
+    res.status(400).json({ error: 'invalid project id' });
+    return;
+  }
+
+  await createProject(projectId, name);
+  res.json({ project: { id: projectId, name } });
+});
+
+app.post('/api/projects/:id/rename', async (req, res) => {
+  const token = extractBearerToken(req.header('authorization'));
+  const user = token ? verifyToken(token) : null;
+  if (!user) {
+    res.status(401).json({ error: 'unauthorized' });
+    return;
+  }
+
+  const projectId = req.params.id;
+  if (!isValidRoomId(projectId)) {
+    res.status(400).json({ error: 'invalid project id' });
+    return;
+  }
+
+  const rawName = typeof req.body?.name === 'string' ? req.body.name : '';
+  const name = normalizeProjectName(rawName);
+  if (!name) {
+    res.status(400).json({ error: 'project name is required' });
+    return;
+  }
+
+  if (await projectNameExists(name, projectId)) {
+    res.status(409).json({ error: 'project name already exists' });
+    return;
+  }
+
+  const updated = await renameProject(projectId, name);
+  if (!updated) {
+    res.status(404).json({ error: 'project not found' });
+    return;
+  }
+
+  res.json({ ok: true, project: { id: projectId, name } });
+});
+
+app.delete('/api/projects/:id', async (req, res) => {
+  const token = extractBearerToken(req.header('authorization'));
+  const user = token ? verifyToken(token) : null;
+  if (!user) {
+    res.status(401).json({ error: 'unauthorized' });
+    return;
+  }
+
+  const projectId = req.params.id;
+  if (!isValidRoomId(projectId)) {
+    res.status(400).json({ error: 'invalid project id' });
+    return;
+  }
+
+  const room = rooms.get(projectId);
+  if (room) {
+    if (room.persistTimer) {
+      clearTimeout(room.persistTimer);
+      room.persistTimer = null;
+    }
+    room.persistRequested = true;
+    await flushProjectPersist(projectId, room);
+    for (const socket of room.sockets) {
+      if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
+        socket.close(1001, 'project deleted');
+      }
+    }
+    room.awareness.destroy();
+    room.doc.destroy();
+    rooms.delete(projectId);
+  }
+
+  const deleted = await deleteProject(projectId);
+  if (!deleted) {
+    res.status(404).json({ error: 'project not found' });
+    return;
+  }
+
+  res.json({ ok: true, projectId });
 });
 
 const server = createServer(app);

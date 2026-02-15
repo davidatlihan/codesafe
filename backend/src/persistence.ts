@@ -451,3 +451,149 @@ export async function setProjectPermission(
     { upsert: true }
   );
 }
+
+export type ListedRoom = {
+  id: string;
+  name: string;
+  updatedAt: string;
+};
+
+export async function createRoomRecord(roomId: string, name?: string): Promise<void> {
+  const connected = await ensureDbConnection();
+  if (!connected) {
+    return;
+  }
+
+  const now = new Date();
+  await ProjectModel.updateOne(
+    { _id: roomId },
+    {
+      $setOnInsert: {
+        _id: roomId,
+        name: name?.trim() || roomId,
+        created_at: now,
+        permissions: {}
+      },
+      $set: {
+        updated_at: now
+      }
+    },
+    { upsert: true }
+  );
+}
+
+export async function listRooms(): Promise<ListedRoom[]> {
+  const connected = await ensureDbConnection();
+  if (!connected) {
+    return [];
+  }
+
+  const projects = await ProjectModel.find({}, { _id: 1, name: 1, updated_at: 1 })
+    .sort({ updated_at: -1 })
+    .limit(100)
+    .lean();
+
+  const rooms: ListedRoom[] = [];
+  for (const project of projects as Array<Record<string, unknown>>) {
+    const id = project._id;
+    const name = project.name;
+    const updatedAt = project.updated_at;
+    if (typeof id !== 'string') {
+      continue;
+    }
+
+    rooms.push({
+      id,
+      name: typeof name === 'string' && name.trim().length > 0 ? name : id,
+      updatedAt: updatedAt instanceof Date ? updatedAt.toISOString() : new Date(0).toISOString()
+    });
+  }
+
+  return rooms;
+}
+
+function toProjectListItem(raw: Record<string, unknown>): ListedRoom | null {
+  const id = raw._id;
+  const name = raw.name;
+  const updatedAt = raw.updated_at;
+  if (typeof id !== 'string') {
+    return null;
+  }
+
+  return {
+    id,
+    name: typeof name === 'string' && name.trim().length > 0 ? name : id,
+    updatedAt: updatedAt instanceof Date ? updatedAt.toISOString() : new Date(0).toISOString()
+  };
+}
+
+export async function listProjects(): Promise<ListedRoom[]> {
+  const connected = await ensureDbConnection();
+  if (!connected) {
+    return [];
+  }
+
+  const projects = await ProjectModel.find({}, { _id: 1, name: 1, updated_at: 1 })
+    .sort({ updated_at: -1 })
+    .limit(200)
+    .lean();
+
+  const output: ListedRoom[] = [];
+  for (const project of projects as Array<Record<string, unknown>>) {
+    const next = toProjectListItem(project);
+    if (next) {
+      output.push(next);
+    }
+  }
+  return output;
+}
+
+export async function createProject(projectId: string, name: string): Promise<void> {
+  await createRoomRecord(projectId, name);
+}
+
+export async function projectNameExists(name: string, excludeProjectId?: string): Promise<boolean> {
+  const connected = await ensureDbConnection();
+  if (!connected) {
+    return false;
+  }
+
+  const filter: Record<string, unknown> = {
+    name: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')
+  };
+  if (excludeProjectId) {
+    filter._id = { $ne: excludeProjectId };
+  }
+  const existing = await ProjectModel.findOne(filter).lean();
+  return Boolean(existing);
+}
+
+export async function renameProject(projectId: string, nextName: string): Promise<boolean> {
+  const connected = await ensureDbConnection();
+  if (!connected) {
+    return false;
+  }
+
+  const result = await ProjectModel.updateOne(
+    { _id: projectId },
+    {
+      $set: {
+        name: nextName,
+        updated_at: new Date()
+      }
+    }
+  );
+  return (result.matchedCount ?? 0) > 0;
+}
+
+export async function deleteProject(projectId: string): Promise<boolean> {
+  const connected = await ensureDbConnection();
+  if (!connected) {
+    return false;
+  }
+
+  const result = await ProjectModel.deleteOne({ _id: projectId });
+  await FileModel.deleteMany({ project_id: projectId });
+  await SuggestionModel.deleteMany({ project_id: projectId });
+  return (result.deletedCount ?? 0) > 0;
+}
