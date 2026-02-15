@@ -91,9 +91,10 @@ export default function LeaderboardPanel({
     const ySuggestions = yDoc.getMap<Y.Map<unknown>>('editor:suggestions');
     const yComments = yDoc.getMap<Y.Map<unknown>>('editor:comments');
     const wsOrigin = { source: 'leaderboard-ws' };
-
-    const socket = new WebSocket(wsAddress);
-    socket.binaryType = 'arraybuffer';
+    let socket: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let reconnectAttempt = 0;
+    let isDisposed = false;
 
     const refresh = (): void => {
       setVersion((current) => current + 1);
@@ -105,15 +106,16 @@ export default function LeaderboardPanel({
     };
 
     const onDocUpdate = (update: Uint8Array, origin: unknown): void => {
-      if (origin === wsOrigin || socket.readyState !== WebSocket.OPEN) {
+      if (origin === wsOrigin || !socket || socket.readyState !== WebSocket.OPEN) {
         return;
       }
 
       socket.send(encodeMessage(MESSAGE_TYPE_SYNC, update));
     };
 
-    const onSocketOpen = (): void => {
-      socket.send(encodeMessage(MESSAGE_TYPE_SYNC, Y.encodeStateAsUpdate(yDoc)));
+    const onSocketOpen = (nextSocket: WebSocket): void => {
+      reconnectAttempt = 0;
+      nextSocket.send(encodeMessage(MESSAGE_TYPE_SYNC, Y.encodeStateAsUpdate(yDoc)));
     };
 
     const onSocketMessage = (event: MessageEvent): void => {
@@ -129,22 +131,62 @@ export default function LeaderboardPanel({
       Y.applyUpdate(yDoc, parsed.payload, wsOrigin);
     };
 
+    const scheduleReconnect = (): void => {
+      if (isDisposed || reconnectTimer) {
+        return;
+      }
+      const delay = Math.min(500 * 2 ** reconnectAttempt, 5000);
+      reconnectAttempt += 1;
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        connectSocket();
+      }, delay);
+    };
+
+    const connectSocket = (): void => {
+      if (isDisposed) {
+        return;
+      }
+
+      const nextSocket = new WebSocket(wsAddress);
+      nextSocket.binaryType = 'arraybuffer';
+      socket = nextSocket;
+
+      nextSocket.addEventListener('open', () => {
+        onSocketOpen(nextSocket);
+      });
+      nextSocket.addEventListener('message', onSocketMessage);
+      nextSocket.addEventListener('close', () => {
+        if (socket === nextSocket) {
+          socket = null;
+        }
+        scheduleReconnect();
+      });
+      nextSocket.addEventListener('error', () => {
+        nextSocket.close();
+      });
+    };
+
     yDoc.on('update', onDocUpdate);
     yChars.observe(refresh);
     ySuggestions.observeDeep(refresh);
     yComments.observeDeep(refresh);
-    socket.addEventListener('open', onSocketOpen);
-    socket.addEventListener('message', onSocketMessage);
+    connectSocket();
     refresh();
 
     return () => {
-      socket.removeEventListener('open', onSocketOpen);
-      socket.removeEventListener('message', onSocketMessage);
+      isDisposed = true;
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
       yComments.unobserveDeep(refresh);
       ySuggestions.unobserveDeep(refresh);
       yChars.unobserve(refresh);
       yDoc.off('update', onDocUpdate);
-      socket.close();
+      if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+        socket.close();
+      }
       yDoc.destroy();
     };
   }, [wsAddress]);

@@ -219,11 +219,11 @@ export default function MonacoEditor({
     const yContributionChars = yDoc.getMap<number>('editor:contrib:chars');
     const awareness = new Awareness(yDoc);
     const wsOrigin = { source: 'ws' };
-    const socket = new WebSocket(
-      `${resolvedWsUrl}?room=${encodeURIComponent(roomId)}&token=${encodeURIComponent(token)}`
-    );
-
-    socket.binaryType = 'arraybuffer';
+    const wsAddress = `${resolvedWsUrl}?room=${encodeURIComponent(roomId)}&token=${encodeURIComponent(token)}`;
+    let socket: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let reconnectAttempt = 0;
+    let isDisposed = false;
 
     yDocRef.current = yDoc;
     yFilesRef.current = yFiles;
@@ -238,7 +238,7 @@ export default function MonacoEditor({
     });
 
     const onDocUpdate = (update: Uint8Array, origin: unknown): void => {
-      if (origin === wsOrigin || socket.readyState !== WebSocket.OPEN) {
+      if (origin === wsOrigin || !socket || socket.readyState !== WebSocket.OPEN) {
         return;
       }
 
@@ -253,7 +253,7 @@ export default function MonacoEditor({
       }: { added: number[]; updated: number[]; removed: number[] },
       origin: unknown
     ): void => {
-      if (origin === wsOrigin || socket.readyState !== WebSocket.OPEN) {
+      if (origin === wsOrigin || !socket || socket.readyState !== WebSocket.OPEN) {
         return;
       }
 
@@ -272,7 +272,7 @@ export default function MonacoEditor({
 
     const onSocketMessage = (event: MessageEvent): void => {
       if (typeof event.data === 'string') {
-        if (event.data === 'ping') {
+        if (event.data === 'ping' && socket && socket.readyState === WebSocket.OPEN) {
           socket.send('pong');
         }
         return;
@@ -294,14 +294,52 @@ export default function MonacoEditor({
       }
     };
 
-    const onSocketOpen = (): void => {
-      socket.send(encodeMessage(MESSAGE_TYPE_SYNC, Y.encodeStateAsUpdate(yDoc)));
-      socket.send(
+    const onSocketOpen = (nextSocket: WebSocket): void => {
+      reconnectAttempt = 0;
+      nextSocket.send(encodeMessage(MESSAGE_TYPE_SYNC, Y.encodeStateAsUpdate(yDoc)));
+      nextSocket.send(
         encodeMessage(
           MESSAGE_TYPE_AWARENESS,
           encodeAwarenessUpdate(awareness, [awareness.clientID])
         )
       );
+    };
+
+    const scheduleReconnect = (): void => {
+      if (isDisposed || reconnectTimer) {
+        return;
+      }
+
+      const delay = Math.min(500 * 2 ** reconnectAttempt, 5000);
+      reconnectAttempt += 1;
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        connectSocket();
+      }, delay);
+    };
+
+    const connectSocket = (): void => {
+      if (isDisposed) {
+        return;
+      }
+
+      const nextSocket = new WebSocket(wsAddress);
+      nextSocket.binaryType = 'arraybuffer';
+      socket = nextSocket;
+
+      nextSocket.addEventListener('open', () => {
+        onSocketOpen(nextSocket);
+      });
+      nextSocket.addEventListener('message', onSocketMessage);
+      nextSocket.addEventListener('close', () => {
+        if (socket === nextSocket) {
+          socket = null;
+        }
+        scheduleReconnect();
+      });
+      nextSocket.addEventListener('error', () => {
+        nextSocket.close();
+      });
     };
 
     const onCommentsChange = (): void => {
@@ -311,12 +349,14 @@ export default function MonacoEditor({
     yDoc.on('update', onDocUpdate);
     yComments.observeDeep(onCommentsChange);
     awareness.on('update', onAwarenessUpdate);
-    socket.addEventListener('open', onSocketOpen);
-    socket.addEventListener('message', onSocketMessage);
+    connectSocket();
 
     return () => {
-      socket.removeEventListener('open', onSocketOpen);
-      socket.removeEventListener('message', onSocketMessage);
+      isDisposed = true;
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
       awareness.off('update', onAwarenessUpdate);
       yDoc.off('update', onDocUpdate);
       yComments.unobserveDeep(onCommentsChange);
@@ -343,7 +383,7 @@ export default function MonacoEditor({
       awareness.destroy();
       yDoc.destroy();
 
-      if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
+      if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
         socket.close();
       }
 

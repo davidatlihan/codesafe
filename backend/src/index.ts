@@ -343,6 +343,8 @@ type Room = {
   awareness: Awareness;
   sockets: Set<WebSocket>;
   persistTimer: NodeJS.Timeout | null;
+  persistInFlight: boolean;
+  persistRequested: boolean;
   permissions: Map<string, Role>;
 };
 
@@ -549,13 +551,45 @@ function parseIncomingChatMessage(data: string): IncomingChatMessage | null {
 }
 
 function scheduleProjectPersist(projectId: string, room: Room): void {
+  room.persistRequested = true;
   if (room.persistTimer) {
-    clearTimeout(room.persistTimer);
+    return;
   }
 
   room.persistTimer = setTimeout(() => {
-    void persistProjectState(projectId, room.doc);
+    room.persistTimer = null;
+    void flushProjectPersist(projectId, room);
   }, 1200);
+}
+
+async function flushProjectPersist(projectId: string, room: Room): Promise<void> {
+  if (room.persistInFlight) {
+    room.persistRequested = true;
+    return;
+  }
+
+  if (!room.persistRequested) {
+    return;
+  }
+
+  room.persistInFlight = true;
+  room.persistRequested = false;
+
+  try {
+    await persistProjectState(projectId, room.doc);
+  } catch (error: unknown) {
+    console.error(`Persist failed for room ${projectId}:`, error);
+    room.persistRequested = true;
+  } finally {
+    room.persistInFlight = false;
+  }
+
+  if (room.persistRequested && !room.persistTimer) {
+    room.persistTimer = setTimeout(() => {
+      room.persistTimer = null;
+      void flushProjectPersist(projectId, room);
+    }, 600);
+  }
 }
 
 function createRoom(projectId: string): Room {
@@ -567,6 +601,8 @@ function createRoom(projectId: string): Room {
     awareness,
     sockets,
     persistTimer: null,
+    persistInFlight: false,
+    persistRequested: false,
     permissions: new Map<string, Role>()
   };
 
@@ -643,10 +679,13 @@ function removeSocketFromRoom(socket: WebSocket): void {
       clearTimeout(room.persistTimer);
       room.persistTimer = null;
     }
-    void persistProjectState(context.roomId, room.doc);
-    room.awareness.destroy();
-    room.doc.destroy();
-    rooms.delete(context.roomId);
+    room.persistRequested = true;
+    void (async () => {
+      await flushProjectPersist(context.roomId, room);
+      room.awareness.destroy();
+      room.doc.destroy();
+      rooms.delete(context.roomId);
+    })();
   }
 }
 
@@ -812,7 +851,8 @@ async function shutdown(signal: string): Promise<void> {
       clearTimeout(room.persistTimer);
       room.persistTimer = null;
     }
-    persistTasks.push(persistProjectState(roomId, room.doc));
+    room.persistRequested = true;
+    persistTasks.push(flushProjectPersist(roomId, room));
   }
   await Promise.allSettled(persistTasks);
 

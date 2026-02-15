@@ -68,8 +68,10 @@ export default function ChatPanel({ roomId, wsUrl, token }: ChatPanelProps) {
   );
 
   useEffect(() => {
-    const socket = new WebSocket(wsAddress);
-    socketRef.current = socket;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let reconnectAttempt = 0;
+    let isDisposed = false;
+    let activeSocket: WebSocket | null = null;
 
     const onMessage = (event: MessageEvent): void => {
       if (typeof event.data !== 'string') {
@@ -92,11 +94,54 @@ export default function ChatPanel({ roomId, wsUrl, token }: ChatPanelProps) {
       ]);
     };
 
-    socket.addEventListener('message', onMessage);
+    const scheduleReconnect = (): void => {
+      if (isDisposed || reconnectTimer) {
+        return;
+      }
+      const delay = Math.min(500 * 2 ** reconnectAttempt, 5000);
+      reconnectAttempt += 1;
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        connectSocket();
+      }, delay);
+    };
+
+    const connectSocket = (): void => {
+      if (isDisposed) {
+        return;
+      }
+
+      const socket = new WebSocket(wsAddress);
+      activeSocket = socket;
+      socketRef.current = socket;
+      socket.addEventListener('message', onMessage);
+      socket.addEventListener('open', () => {
+        reconnectAttempt = 0;
+      });
+      socket.addEventListener('close', () => {
+        if (activeSocket === socket) {
+          activeSocket = null;
+          socketRef.current = null;
+        }
+        scheduleReconnect();
+      });
+      socket.addEventListener('error', () => {
+        socket.close();
+      });
+    };
+
+    connectSocket();
 
     return () => {
-      socket.removeEventListener('message', onMessage);
-      socket.close();
+      isDisposed = true;
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      if (activeSocket) {
+        activeSocket.removeEventListener('message', onMessage);
+        activeSocket.close();
+      }
       socketRef.current = null;
     };
   }, [wsAddress]);

@@ -98,8 +98,10 @@ export default function FileExplorer({ roomId, wsUrl, token, onOpenFile }: FileE
     const nodes = yDoc.getMap<Y.Map<unknown>>('file-tree:nodes');
     const rootIds = yDoc.getArray<string>('file-tree:roots');
     const wsOrigin = { source: 'file-explorer-ws' };
-    const socket = new WebSocket(wsAddress);
-    socket.binaryType = 'arraybuffer';
+    let socket: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let reconnectAttempt = 0;
+    let isDisposed = false;
 
     yDocRef.current = yDoc;
     nodesRef.current = nodes;
@@ -119,14 +121,15 @@ export default function FileExplorer({ roomId, wsUrl, token, onOpenFile }: FileE
     }
 
     const onDocUpdate = (update: Uint8Array, origin: unknown): void => {
-      if (origin === wsOrigin || socket.readyState !== WebSocket.OPEN) {
+      if (origin === wsOrigin || !socket || socket.readyState !== WebSocket.OPEN) {
         return;
       }
       socket.send(encodeMessage(MESSAGE_TYPE_SYNC, update));
     };
 
-    const onSocketOpen = (): void => {
-      socket.send(encodeMessage(MESSAGE_TYPE_SYNC, Y.encodeStateAsUpdate(yDoc)));
+    const onSocketOpen = (nextSocket: WebSocket): void => {
+      reconnectAttempt = 0;
+      nextSocket.send(encodeMessage(MESSAGE_TYPE_SYNC, Y.encodeStateAsUpdate(yDoc)));
     };
 
     const onSocketMessage = (event: MessageEvent): void => {
@@ -146,20 +149,58 @@ export default function FileExplorer({ roomId, wsUrl, token, onOpenFile }: FileE
       setVersion((current) => current + 1);
     };
 
+    const scheduleReconnect = (): void => {
+      if (isDisposed || reconnectTimer) {
+        return;
+      }
+      const delay = Math.min(500 * 2 ** reconnectAttempt, 5000);
+      reconnectAttempt += 1;
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        connectSocket();
+      }, delay);
+    };
+
+    const connectSocket = (): void => {
+      if (isDisposed) {
+        return;
+      }
+
+      const nextSocket = new WebSocket(wsAddress);
+      nextSocket.binaryType = 'arraybuffer';
+      socket = nextSocket;
+
+      nextSocket.addEventListener('open', () => {
+        onSocketOpen(nextSocket);
+      });
+      nextSocket.addEventListener('message', onSocketMessage);
+      nextSocket.addEventListener('close', () => {
+        if (socket === nextSocket) {
+          socket = null;
+        }
+        scheduleReconnect();
+      });
+      nextSocket.addEventListener('error', () => {
+        nextSocket.close();
+      });
+    };
+
     yDoc.on('update', onDocUpdate);
     nodes.observeDeep(rerender);
     rootIds.observe(rerender);
-    socket.addEventListener('open', onSocketOpen);
-    socket.addEventListener('message', onSocketMessage);
+    connectSocket();
 
     return () => {
-      socket.removeEventListener('open', onSocketOpen);
-      socket.removeEventListener('message', onSocketMessage);
+      isDisposed = true;
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
       nodes.unobserveDeep(rerender);
       rootIds.unobserve(rerender);
       yDoc.off('update', onDocUpdate);
 
-      if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
+      if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
         socket.close();
       }
 

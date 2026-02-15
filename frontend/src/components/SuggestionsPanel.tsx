@@ -83,9 +83,10 @@ export default function SuggestionsPanel({
     const yDoc = new Y.Doc();
     const ySuggestions = yDoc.getMap<Y.Map<unknown>>('editor:suggestions');
     const wsOrigin = { source: 'suggestions-ws' };
-
-    const socket = new WebSocket(wsAddress);
-    socket.binaryType = 'arraybuffer';
+    let socket: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let reconnectAttempt = 0;
+    let isDisposed = false;
 
     yDocRef.current = yDoc;
     ySuggestionsRef.current = ySuggestions;
@@ -96,14 +97,15 @@ export default function SuggestionsPanel({
     };
 
     const onDocUpdate = (update: Uint8Array, origin: unknown): void => {
-      if (origin === wsOrigin || socket.readyState !== WebSocket.OPEN) {
+      if (origin === wsOrigin || !socket || socket.readyState !== WebSocket.OPEN) {
         return;
       }
       socket.send(encodeMessage(MESSAGE_TYPE_SYNC, update));
     };
 
-    const onSocketOpen = (): void => {
-      socket.send(encodeMessage(MESSAGE_TYPE_SYNC, Y.encodeStateAsUpdate(yDoc)));
+    const onSocketOpen = (nextSocket: WebSocket): void => {
+      reconnectAttempt = 0;
+      nextSocket.send(encodeMessage(MESSAGE_TYPE_SYNC, Y.encodeStateAsUpdate(yDoc)));
     };
 
     const onSocketMessage = (event: MessageEvent): void => {
@@ -119,18 +121,58 @@ export default function SuggestionsPanel({
       Y.applyUpdate(yDoc, parsed.payload, wsOrigin);
     };
 
+    const scheduleReconnect = (): void => {
+      if (isDisposed || reconnectTimer) {
+        return;
+      }
+      const delay = Math.min(500 * 2 ** reconnectAttempt, 5000);
+      reconnectAttempt += 1;
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        connectSocket();
+      }, delay);
+    };
+
+    const connectSocket = (): void => {
+      if (isDisposed) {
+        return;
+      }
+
+      const nextSocket = new WebSocket(wsAddress);
+      nextSocket.binaryType = 'arraybuffer';
+      socket = nextSocket;
+
+      nextSocket.addEventListener('open', () => {
+        onSocketOpen(nextSocket);
+      });
+      nextSocket.addEventListener('message', onSocketMessage);
+      nextSocket.addEventListener('close', () => {
+        if (socket === nextSocket) {
+          socket = null;
+        }
+        scheduleReconnect();
+      });
+      nextSocket.addEventListener('error', () => {
+        nextSocket.close();
+      });
+    };
+
     yDoc.on('update', onDocUpdate);
     ySuggestions.observeDeep(refresh);
-    socket.addEventListener('open', onSocketOpen);
-    socket.addEventListener('message', onSocketMessage);
+    connectSocket();
     refresh();
 
     return () => {
-      socket.removeEventListener('open', onSocketOpen);
-      socket.removeEventListener('message', onSocketMessage);
+      isDisposed = true;
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
       ySuggestions.unobserveDeep(refresh);
       yDoc.off('update', onDocUpdate);
-      socket.close();
+      if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+        socket.close();
+      }
       yDoc.destroy();
       yDocRef.current = null;
       ySuggestionsRef.current = null;
