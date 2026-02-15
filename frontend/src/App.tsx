@@ -1,5 +1,5 @@
 import { FormEvent, useMemo, useState } from 'react';
-import ReactGridLayout, { WidthProvider, type Layout } from 'react-grid-layout';
+import ReactGridLayout, { WidthProvider } from 'react-grid-layout';
 import ChatPanel from './components/ChatPanel';
 import FileExplorer from './components/FileExplorer';
 import LeaderboardPanel from './components/LeaderboardPanel';
@@ -22,12 +22,22 @@ type PanelKey = 'explorer' | 'editor' | 'suggestions' | 'chat' | 'leaderboard';
 
 type HiddenPanels = Record<PanelKey, boolean>;
 
+type GridLayoutItem = {
+  i: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  minW?: number;
+  minH?: number;
+};
+
 const GridLayout = WidthProvider(ReactGridLayout);
 
 const LAYOUT_STORAGE_KEY = 'workspace-layout-v1';
 const HIDDEN_STORAGE_KEY = 'workspace-hidden-panels-v1';
 
-const DEFAULT_LAYOUT: Layout[] = [
+const DEFAULT_LAYOUT: GridLayoutItem[] = [
   { i: 'explorer', x: 0, y: 0, w: 3, h: 10, minW: 2, minH: 6 },
   { i: 'editor', x: 3, y: 0, w: 6, h: 10, minW: 4, minH: 6 },
   { i: 'suggestions', x: 9, y: 0, w: 3, h: 5, minW: 2, minH: 4 },
@@ -56,20 +66,20 @@ function toWsUrl(baseUrl: string): string {
   return baseUrl;
 }
 
-function safeReadLayout(): Layout[] {
+function safeReadLayout(): GridLayoutItem[] {
   const raw = localStorage.getItem(LAYOUT_STORAGE_KEY);
   if (!raw) {
     return DEFAULT_LAYOUT;
   }
 
   try {
-    const parsed = JSON.parse(raw) as Layout[];
+    const parsed = JSON.parse(raw) as GridLayoutItem[];
     if (!Array.isArray(parsed)) {
       return DEFAULT_LAYOUT;
     }
 
     const known = new Set(DEFAULT_LAYOUT.map((item) => item.i));
-    const validItems = parsed.filter((item): item is Layout => {
+    const validItems = parsed.filter((item): item is GridLayoutItem => {
       return (
         typeof item.i === 'string' &&
         known.has(item.i) &&
@@ -118,7 +128,7 @@ function App() {
   const [auth, setAuth] = useState<AuthState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [layout, setLayout] = useState<Layout[]>(safeReadLayout);
+  const [layout, setLayout] = useState<GridLayoutItem[]>(safeReadLayout);
   const [hiddenPanels, setHiddenPanels] = useState<HiddenPanels>(safeReadHiddenPanels);
   const [openTabs, setOpenTabs] = useState<OpenFileTab[]>(() => [
     {
@@ -224,7 +234,7 @@ function App() {
     }
   };
 
-  const handleLayoutChange = (nextLayout: Layout[]): void => {
+  const handleLayoutChange = (nextLayout: GridLayoutItem[]): void => {
     setLayout((current) => {
       const byId = new Map(nextLayout.map((item) => [item.i, item]));
       const merged = current.map((item) => byId.get(item.i) ?? item);

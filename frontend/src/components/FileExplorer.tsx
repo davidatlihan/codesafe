@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactElement, useEffect, useMemo, useRef, useState } from 'react';
 import * as Y from 'yjs';
 
 type FileExplorerProps = {
@@ -282,7 +282,7 @@ export default function FileExplorer({ roomId, wsUrl, token, onOpenFile }: FileE
   const nodes = nodesRef.current;
   const rootIds = rootIdsRef.current;
 
-  const renderNode = (id: string, depth: number): JSX.Element | null => {
+  const renderNode = (id: string, depth: number): ReactElement | null => {
     if (!nodes) {
       return null;
     }
