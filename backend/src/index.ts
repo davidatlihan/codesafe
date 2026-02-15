@@ -197,39 +197,19 @@ app.post('/api/auth/login', async (req, res) => {
     return;
   }
 
-  try {
-    const userRecord = await findOrCreateUserByUsername(username);
-    const userId = userRecord.userId;
-    const role = userRecord.role;
-    const token = jwt.sign({ userId, username, role }, jwtSecret, { expiresIn: '8h' });
+  const userRecord = await findOrCreateUserByUsername(username);
+  const userId = userRecord.userId;
+  const role = userRecord.role;
+  const token = jwt.sign({ userId, username, role }, jwtSecret, { expiresIn: '8h' });
 
-    res.json({
-      token,
-      user: {
-        userId,
-        username,
-        role
-      }
-    });
-  } catch (error: unknown) {
-    console.error('Login failed, using fallback user record:', error);
-    const fallbackUserId = randomUUID();
-    const fallbackRole: Role = 'editor';
-    const token = jwt.sign(
-      { userId: fallbackUserId, username, role: fallbackRole },
-      jwtSecret,
-      { expiresIn: '8h' }
-    );
-
-    res.json({
-      token,
-      user: {
-        userId: fallbackUserId,
-        username,
-        role: fallbackRole
-      }
-    });
-  }
+  res.json({
+    token,
+    user: {
+      userId,
+      username,
+      role
+    }
+  });
 });
 
 const server = createServer(app);
