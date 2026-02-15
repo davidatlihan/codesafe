@@ -131,7 +131,6 @@ export default function MonacoEditor({
   onCloseFile
 }: MonacoEditorProps) {
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
-  const editorBodyRef = useRef<HTMLDivElement | null>(null);
   const monacoRef = useRef<typeof Monaco | null>(null);
   const [isEditorReady, setIsEditorReady] = useState(false);
 
@@ -152,14 +151,6 @@ export default function MonacoEditor({
   const handleEditorMount: OnMount = (editor, monaco) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
-    const overflowHost = editorBodyRef.current;
-    if (overflowHost) {
-      editor.updateOptions(
-        {
-          overflowWidgetsDomNode: overflowHost
-        } as Monaco.editor.IEditorOptions
-      );
-    }
     setIsEditorReady(true);
   };
 
@@ -672,7 +663,7 @@ export default function MonacoEditor({
           </button>
         ))}
       </div>
-      <div className="editor-body" ref={editorBodyRef}>
+      <div className="editor-body">
         {openFiles.length === 0 ? (
           <div className="editor-empty">Open a file from the explorer.</div>
         ) : (
