@@ -678,9 +678,7 @@ export default function MonacoEditor({
               minimap: { enabled: false },
               scrollBeyondLastLine: false,
               automaticLayout: true,
-              fixedOverflowWidgets: true,
-              overflowWidgetsDomNode:
-                typeof document !== 'undefined' ? document.body : undefined
+              fixedOverflowWidgets: true
             }}
             theme="vs"
           />
