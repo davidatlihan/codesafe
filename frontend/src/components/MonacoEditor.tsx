@@ -677,7 +677,10 @@ export default function MonacoEditor({
               glyphMargin: true,
               minimap: { enabled: false },
               scrollBeyondLastLine: false,
-              automaticLayout: true
+              automaticLayout: true,
+              fixedOverflowWidgets: true,
+              overflowWidgetsDomNode:
+                typeof document !== 'undefined' ? document.body : undefined
             }}
             theme="vs"
           />
