@@ -1,0 +1,367 @@
+:root {
+  --line: #b6b6b6;
+  --line-strong: #808080;
+  --fg: #1b1b1b;
+  --bg: #ffffff;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --font-size: 14px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: var(--font-size);
+  color: var(--fg);
+  background: var(--bg);
+  line-height: 1.45;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button,
+input,
+textarea {
+  border: 1px solid var(--line);
+  background: var(--bg);
+}
+
+button {
+  cursor: pointer;
+  padding: 0.3rem 0.55rem;
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+input,
+textarea {
+  padding: 0.4rem 0.5rem;
+}
+
+.login-shell {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  padding: var(--space-3);
+}
+
+.login-form {
+  display: grid;
+  gap: var(--space-2);
+  width: min(340px, 100%);
+  padding: var(--space-3);
+  border: 1px solid var(--line-strong);
+}
+
+.login-form input,
+.login-form button {
+  width: 100%;
+}
+
+.login-form p {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.workspace-grid-shell {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+.panel-toggle-bar {
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.workspace-grid {
+  min-height: 0;
+}
+
+.react-grid-item.react-grid-placeholder {
+  background: transparent;
+  border: 1px dashed var(--line);
+}
+
+.react-resizable-handle::after {
+  border-color: var(--line-strong);
+}
+
+.panel {
+  border: 1px solid var(--line-strong);
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.panel-header {
+  padding: 0.4rem var(--space-2);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  cursor: move;
+  user-select: none;
+  font-weight: 600;
+}
+
+.panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.panel-body-editor {
+  overflow: visible;
+}
+
+.panel-body-scroll {
+  overflow: auto;
+}
+
+.panel-stack {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  height: 100%;
+}
+
+.chat-list {
+  overflow: auto;
+  padding: var(--space-2);
+}
+
+.chat-list p {
+  margin: 0 0 0.4rem;
+  word-break: break-word;
+}
+
+.chat-form {
+  border-top: 1px solid var(--line);
+  padding: var(--space-2);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-2);
+}
+
+.leaderboard-list {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  padding: var(--space-2);
+  display: grid;
+  gap: var(--space-2);
+}
+
+.leaderboard-item {
+  border: 1px solid var(--line);
+  padding: var(--space-2);
+  display: grid;
+  gap: var(--space-1);
+  font-size: 0.9rem;
+}
+
+.leaderboard-name {
+  font-weight: 600;
+}
+
+.file-explorer {
+  border: 0;
+  background: var(--bg);
+  color: var(--fg);
+  height: 100%;
+}
+
+.explorer-toolbar {
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+  padding: var(--space-2);
+  display: grid;
+  gap: var(--space-2);
+}
+
+.tree-root,
+.file-explorer ul {
+  list-style: none;
+  margin: 0;
+  padding: 0.35rem var(--space-2);
+}
+
+.tree-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 0.2rem 0;
+}
+
+.tree-node-button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tree-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.tree-actions button {
+  font-size: 0.82rem;
+  padding: 0.16rem 0.34rem;
+}
+
+.editor-panel {
+  width: 100%;
+  height: 100%;
+}
+
+.monaco-shell {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+.editor-tabs {
+  display: flex;
+  gap: var(--space-1);
+  padding: 0.35rem;
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+}
+
+.editor-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: 1px solid var(--line);
+  background: var(--bg);
+  padding: 0.22rem 0.5rem;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.editor-tab.is-active {
+  border-color: var(--line-strong);
+  font-weight: 600;
+}
+
+.tab-close {
+  line-height: 1;
+  font-weight: 700;
+}
+
+.editor-body {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+.editor-empty {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  padding: var(--space-2);
+}
+
+.suggestions-panel {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+.suggestions-controls {
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  gap: var(--space-2);
+}
+
+.suggestions-line-inputs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+}
+
+.suggestions-controls textarea {
+  min-height: 60px;
+  resize: vertical;
+}
+
+.suggestions-list {
+  overflow: auto;
+  padding: var(--space-2);
+  display: grid;
+  gap: var(--space-2);
+}
+
+.suggestion-item {
+  border: 1px solid var(--line);
+  padding: var(--space-2);
+  display: grid;
+  gap: var(--space-1);
+  font-size: 0.85rem;
+}
+
+.suggestion-votes {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+
+.suggestion-votes button {
+  padding: 0.16rem 0.34rem;
+}
+
+.suggestion-line-highlight {
+  background: rgba(255, 225, 130, 0.28);
+}
+
+.comment-glyph {
+  margin-left: 4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background: transparent;
+}

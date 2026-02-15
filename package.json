@@ -1,0 +1,23 @@
+{
+  "name": "fullstack-monorepo",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev:frontend": "npm run dev -w frontend",
+    "dev:backend": "npm run dev -w backend",
+    "dev": "concurrently \"npm:dev:frontend\" \"npm:dev:backend\"",
+    "build": "npm run build -w frontend && npm run build -w backend",
+    "lint": "npm run lint -w frontend && npm run lint -w backend",
+    "test:backend": "npm run test -w backend",
+    "test:e2e": "playwright test",
+    "test": "npm run test:backend && npm run test:e2e"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.53.2",
+    "concurrently": "^9.1.2"
+  }
+}
