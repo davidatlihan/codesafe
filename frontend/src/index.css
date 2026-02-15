@@ -225,6 +225,38 @@ textarea {
   gap: var(--space-2);
 }
 
+.console-toolbar {
+  border-bottom: 1px solid var(--line);
+  padding: var(--space-2);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.console-panel {
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+.console-actions {
+  display: inline-flex;
+  gap: var(--space-1);
+}
+
+.console-output {
+  margin: 0;
+  padding: var(--space-2);
+  overflow: auto;
+  min-height: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.82rem;
+}
+
 .leaderboard-list {
   width: 100%;
   height: 100%;

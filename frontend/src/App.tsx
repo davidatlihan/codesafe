@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import ReactGridLayout, { WidthProvider } from 'react-grid-layout';
 import ChatPanel from './components/ChatPanel';
+import ConsolePanel from './components/ConsolePanel';
 import FileExplorer from './components/FileExplorer';
 import LeaderboardPanel from './components/LeaderboardPanel';
 import MonacoEditor from './components/MonacoEditor';
@@ -18,13 +19,20 @@ type OpenFileTab = {
   name: string;
 };
 
+type ActiveFileContext = {
+  fileId: string;
+  fileName: string;
+  language: 'javascript' | 'python';
+  content: string;
+};
+
 type ListedRoom = {
   id: string;
   name: string;
   updatedAt: string;
 };
 
-type PanelKey = 'explorer' | 'editor' | 'suggestions' | 'chat' | 'leaderboard';
+type PanelKey = 'explorer' | 'editor' | 'suggestions' | 'chat' | 'leaderboard' | 'console';
 
 type HiddenPanels = Record<PanelKey, boolean>;
 
@@ -41,11 +49,12 @@ type GridLayoutItem = {
 const GridLayout = WidthProvider(ReactGridLayout);
 
 const DEFAULT_LAYOUT: GridLayoutItem[] = [
-  { i: 'explorer', x: 0, y: 0, w: 3, h: 14, minW: 2, minH: 6 },
-  { i: 'editor', x: 3, y: 0, w: 6, h: 14, minW: 4, minH: 6 },
-  { i: 'suggestions', x: 9, y: 0, w: 3, h: 7, minW: 2, minH: 4 },
-  { i: 'chat', x: 9, y: 7, w: 3, h: 4, minW: 2, minH: 3 },
-  { i: 'leaderboard', x: 9, y: 11, w: 3, h: 3, minW: 2, minH: 2 }
+  { i: 'explorer', x: 0, y: 0, w: 3, h: 15, minW: 2, minH: 6 },
+  { i: 'editor', x: 3, y: 0, w: 6, h: 11, minW: 4, minH: 6 },
+  { i: 'suggestions', x: 9, y: 0, w: 3, h: 5, minW: 2, minH: 4 },
+  { i: 'chat', x: 9, y: 5, w: 3, h: 5, minW: 2, minH: 3 },
+  { i: 'leaderboard', x: 9, y: 10, w: 3, h: 5, minW: 2, minH: 2 },
+  { i: 'console', x: 3, y: 11, w: 6, h: 4, minW: 4, minH: 2 }
 ];
 
 const DEFAULT_HIDDEN: HiddenPanels = {
@@ -53,9 +62,10 @@ const DEFAULT_HIDDEN: HiddenPanels = {
   editor: false,
   suggestions: false,
   chat: false,
-  leaderboard: false
+  leaderboard: false,
+  console: false
 };
-const ALL_PANELS: PanelKey[] = ['explorer', 'editor', 'suggestions', 'chat', 'leaderboard'];
+const ALL_PANELS: PanelKey[] = ['explorer', 'editor', 'suggestions', 'chat', 'leaderboard', 'console'];
 
 function cloneDefaultLayout(): GridLayoutItem[] {
   return DEFAULT_LAYOUT.map((item) => ({ ...item }));
@@ -128,6 +138,7 @@ function App() {
   const [hiddenPanels, setHiddenPanels] = useState<HiddenPanels>(cloneDefaultHiddenPanels);
   const [openTabs, setOpenTabs] = useState<OpenFileTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [activeFileContext, setActiveFileContext] = useState<ActiveFileContext | null>(null);
   const [editorLayoutVersion, setEditorLayoutVersion] = useState(0);
 
   const apiBaseUrl = useMemo(() => {
@@ -152,6 +163,7 @@ function App() {
   const resetOpenTabs = (): void => {
     setOpenTabs([]);
     setActiveTabId(null);
+    setActiveFileContext(null);
   };
 
   const applyRoomChange = (nextRoomRaw: string): void => {
@@ -510,7 +522,8 @@ function App() {
     { key: 'editor', label: 'Editor' },
     { key: 'suggestions', label: 'Suggestions' },
     { key: 'chat', label: 'Chat' },
-    { key: 'leaderboard', label: 'Leaderboard' }
+    { key: 'leaderboard', label: 'Leaderboard' },
+    { key: 'console', label: 'Console' }
   ];
   const visibleLayout = layout.filter((item) =>
     ALL_PANELS.includes(item.i as PanelKey) && !hiddenPanels[item.i as PanelKey]
@@ -584,6 +597,7 @@ function App() {
                 openFiles={openTabs}
                 activeFileId={activeTabId}
                 layoutVersion={editorLayoutVersion}
+                onActiveFileContextChange={setActiveFileContext}
                 onActiveFileChange={setActiveTabId}
                 onCloseFile={handleCloseTab}
               />
@@ -635,6 +649,24 @@ function App() {
                 token={auth.token}
                 currentUserId={auth.userId}
                 currentUsername={auth.username}
+              />
+            </div>
+          </section>
+        ) : null}
+
+        {!hiddenPanels.console ? (
+          <section key="console" className="panel">
+            <header className="panel-header">
+              <span>Console</span>
+              <button type="button" onClick={() => closePanel('console')}>Close</button>
+            </header>
+            <div className="panel-body">
+              <ConsolePanel
+                apiBaseUrl={apiBaseUrl}
+                token={auth.token}
+                projectId={selectedProjectId}
+                activeFile={activeFileContext}
+                role={auth.role}
               />
             </div>
           </section>

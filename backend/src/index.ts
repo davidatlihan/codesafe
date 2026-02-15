@@ -2,8 +2,12 @@ import cors from 'cors';
 import express from 'express';
 import JSZip from 'jszip';
 import jwt from 'jsonwebtoken';
+import { spawn } from 'node:child_process';
 import { createServer, type IncomingMessage } from 'node:http';
 import { randomUUID } from 'node:crypto';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { WebSocket, WebSocketServer } from 'ws';
 import * as decoding from 'lib0/decoding';
 import * as Y from 'yjs';
@@ -89,6 +93,18 @@ type OutgoingChatMessage = {
   sentAt: string;
 };
 
+type RunLanguage = 'javascript' | 'python';
+
+type RunResult = {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+  timedOut: boolean;
+};
+
+const RUN_TIMEOUT_MS = 8000;
+const RUN_MAX_OUTPUT_BYTES = 64 * 1024;
+
 function getRequestIp(req: express.Request): string {
   const forwarded = req.header('x-forwarded-for');
   if (forwarded) {
@@ -147,6 +163,110 @@ function projectIdFromName(name: string): string {
     return normalized;
   }
   return randomRoomId();
+}
+
+function truncateOutput(raw: string): string {
+  if (Buffer.byteLength(raw, 'utf8') <= RUN_MAX_OUTPUT_BYTES) {
+    return raw;
+  }
+
+  let clipped = raw;
+  while (Buffer.byteLength(clipped, 'utf8') > RUN_MAX_OUTPUT_BYTES) {
+    clipped = clipped.slice(0, Math.floor(clipped.length * 0.9));
+  }
+  return `${clipped}\n[output truncated]`;
+}
+
+function sanitizeRunFileName(fileNameRaw: string, fallbackBase: string): string {
+  const normalized = sanitizePathSegment(fileNameRaw || fallbackBase);
+  return normalized.length > 0 ? normalized : fallbackBase;
+}
+
+async function runCodeInTempFile(
+  language: RunLanguage,
+  code: string,
+  requestedFileName: string
+): Promise<RunResult> {
+  const tempDir = await mkdtemp(join(tmpdir(), 'codesafe-run-'));
+  const defaultFileName = language === 'python' ? 'main.py' : 'main.js';
+  const safeFileName = sanitizeRunFileName(requestedFileName, defaultFileName);
+  const extension = language === 'python' ? '.py' : '.js';
+  const fileName = safeFileName.endsWith(extension) ? safeFileName : `${safeFileName}${extension}`;
+  const filePath = join(tempDir, fileName);
+
+  await writeFile(filePath, code, 'utf8');
+
+  const command = language === 'python' ? 'python3' : 'node';
+  const args = [filePath];
+
+  try {
+    const result = await new Promise<RunResult>((resolve, reject) => {
+      const child = spawn(command, args, {
+        cwd: tempDir,
+        env: {
+          PATH: process.env.PATH ?? '',
+          PYTHONUNBUFFERED: '1'
+        },
+        stdio: ['ignore', 'pipe', 'pipe']
+      });
+
+      let stdout = '';
+      let stderr = '';
+      let timedOut = false;
+      let spawnFailed = false;
+
+      const appendChunk = (target: 'stdout' | 'stderr', chunk: Buffer): void => {
+        const text = chunk.toString('utf8');
+        if (target === 'stdout') {
+          stdout = truncateOutput(`${stdout}${text}`);
+        } else {
+          stderr = truncateOutput(`${stderr}${text}`);
+        }
+      };
+
+      const timeout = setTimeout(() => {
+        timedOut = true;
+        child.kill('SIGKILL');
+      }, RUN_TIMEOUT_MS);
+
+      child.stdout.on('data', (chunk: Buffer) => appendChunk('stdout', chunk));
+      child.stderr.on('data', (chunk: Buffer) => appendChunk('stderr', chunk));
+
+      child.on('error', (error: NodeJS.ErrnoException) => {
+        clearTimeout(timeout);
+        spawnFailed = true;
+        if (error.code === 'ENOENT') {
+          resolve({
+            stdout,
+            stderr: `${command} is not available on server.`,
+            exitCode: 127,
+            timedOut: false
+          });
+          return;
+        }
+        reject(error);
+      });
+
+      child.on('close', (codeValue: number | null) => {
+        clearTimeout(timeout);
+        if (spawnFailed) {
+          return;
+        }
+        const exitCode = typeof codeValue === 'number' ? codeValue : 1;
+        resolve({
+          stdout,
+          stderr:
+            stderr ||
+            (timedOut ? 'Execution timed out.' : ''),
+          exitCode,
+          timedOut
+        });
+      });
+    });
+    return result;
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
 }
 
 app.disable('x-powered-by');
@@ -445,6 +565,74 @@ app.post('/api/projects/:id/export', async (req, res) => {
 
   if (!room) {
     exportDoc.destroy();
+  }
+});
+
+app.post('/api/projects/:id/run', async (req, res) => {
+  if (isShuttingDown) {
+    res.status(503).json({ error: 'server is shutting down' });
+    return;
+  }
+
+  const token = extractBearerToken(req.header('authorization'));
+  const user = token ? verifyToken(token) : null;
+  if (!user) {
+    res.status(401).json({ error: 'unauthorized' });
+    return;
+  }
+
+  const projectId = req.params.id;
+  if (!isValidRoomId(projectId)) {
+    res.status(400).json({ error: 'invalid project id' });
+    return;
+  }
+
+  const room = await getOrCreateRoom(projectId);
+  const requesterRole = getEffectiveRole(room, user);
+  if (getRoleRank(requesterRole) < getRoleRank('editor')) {
+    res.status(403).json({ error: 'editor role required' });
+    return;
+  }
+
+  const languageRaw = req.body?.language;
+  const codeRaw = req.body?.code;
+  const fileNameRaw = req.body?.fileName;
+  const language: RunLanguage | null =
+    languageRaw === 'javascript' || languageRaw === 'python' ? languageRaw : null;
+  const code = typeof codeRaw === 'string' ? codeRaw : '';
+  const fileName = typeof fileNameRaw === 'string' ? fileNameRaw : '';
+
+  if (!language) {
+    res.status(400).json({ error: 'language must be javascript or python' });
+    return;
+  }
+
+  if (!code.trim()) {
+    res.status(400).json({ error: 'code is required' });
+    return;
+  }
+
+  if (Buffer.byteLength(code, 'utf8') > 256 * 1024) {
+    res.status(413).json({ error: 'code payload too large' });
+    return;
+  }
+
+  try {
+    const result = await runCodeInTempFile(language, code, fileName);
+    res.json({
+      ok: true,
+      language,
+      ...result
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'execution failed';
+    res.status(500).json({
+      ok: false,
+      stdout: '',
+      stderr: message,
+      exitCode: 1,
+      timedOut: false
+    });
   }
 });
 

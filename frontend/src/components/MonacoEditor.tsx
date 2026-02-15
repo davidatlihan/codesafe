@@ -22,6 +22,12 @@ type MonacoEditorProps = {
   openFiles: OpenFileTab[];
   activeFileId: string | null;
   layoutVersion?: number;
+  onActiveFileContextChange?: (context: {
+    fileId: string;
+    fileName: string;
+    language: SupportedLanguage;
+    content: string;
+  } | null) => void;
   onActiveFileChange: (fileId: string | null) => void;
   onCloseFile: (fileId: string) => void;
 };
@@ -129,6 +135,7 @@ export default function MonacoEditor({
   openFiles,
   activeFileId,
   layoutVersion = 0,
+  onActiveFileContextChange,
   onActiveFileChange,
   onCloseFile
 }: MonacoEditorProps) {
@@ -651,6 +658,52 @@ export default function MonacoEditor({
       editor.setModel(null);
     }
   }, [activeFileId, defaultLanguage, onActiveFileChange, openFiles]);
+
+  useEffect(() => {
+    if (!onActiveFileContextChange) {
+      return;
+    }
+
+    const editor = editorRef.current;
+    if (!editor) {
+      onActiveFileContextChange(null);
+      return;
+    }
+
+    const emitActiveFileContext = (): void => {
+      if (!activeFileId) {
+        onActiveFileContextChange(null);
+        return;
+      }
+
+      const activeMeta = openFiles.find((file) => file.id === activeFileId);
+      const model = editor.getModel();
+      if (!activeMeta || !model) {
+        onActiveFileContextChange(null);
+        return;
+      }
+
+      onActiveFileContextChange({
+        fileId: activeMeta.id,
+        fileName: activeMeta.name,
+        language: inferLanguage(activeMeta.name, defaultLanguage),
+        content: model.getValue()
+      });
+    };
+
+    emitActiveFileContext();
+    const modelContentDisposable = editor.onDidChangeModelContent(() => {
+      emitActiveFileContext();
+    });
+    const modelDisposable = editor.onDidChangeModel(() => {
+      emitActiveFileContext();
+    });
+
+    return () => {
+      modelContentDisposable.dispose();
+      modelDisposable.dispose();
+    };
+  }, [activeFileId, defaultLanguage, onActiveFileContextChange, openFiles]);
 
   const addInlineComment = (line: number): void => {
     const yDoc = yDocRef.current;
