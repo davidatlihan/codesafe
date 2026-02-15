@@ -44,10 +44,17 @@ if (env === 'production' && !hasMongoUri) {
   throw new Error('MONGODB_URI must be set in production');
 }
 
-const allowedOriginList = (process.env.CORS_ORIGINS ?? '')
+const configuredOrigins = (process.env.CORS_ORIGINS ?? '')
   .split(',')
   .map((entry) => entry.trim())
   .filter((entry) => entry.length > 0);
+const defaultProductionOrigins = ['https://codesafe.vercel.app'];
+const allowedOriginList =
+  configuredOrigins.length > 0
+    ? configuredOrigins
+    : env === 'production'
+      ? defaultProductionOrigins
+      : [];
 const allowAllOrigins = env !== 'production' && allowedOriginList.length === 0;
 
 const authWindowMs = 60_000;

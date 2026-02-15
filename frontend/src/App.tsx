@@ -66,6 +66,24 @@ function toWsUrl(baseUrl: string): string {
   return baseUrl;
 }
 
+function defaultApiBaseUrl(): string {
+  const { protocol, hostname, origin } = window.location;
+  const isLocalhost =
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '0.0.0.0';
+
+  if (isLocalhost) {
+    return 'http://localhost:4000';
+  }
+
+  if (protocol === 'https:' || protocol === 'http:') {
+    return origin;
+  }
+
+  return 'http://localhost:4000';
+}
+
 function safeReadLayout(): GridLayoutItem[] {
   const raw = localStorage.getItem(LAYOUT_STORAGE_KEY);
   if (!raw) {
@@ -142,7 +160,7 @@ function App() {
 
   const apiBaseUrl = useMemo(() => {
     const env = (import.meta as ImportMeta & { env: Record<string, string | undefined> }).env;
-    return env.VITE_API_URL ?? 'http://localhost:4000';
+    return env.VITE_API_URL ?? defaultApiBaseUrl();
   }, []);
 
   const wsBaseUrl = useMemo(() => {
