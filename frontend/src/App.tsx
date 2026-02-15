@@ -214,7 +214,8 @@ function App() {
     setIsLoading(true);
 
     try {
-      const response = await fetch(`${apiBaseUrl}/api/auth/login`, {
+      const loginUrl = `${apiBaseUrl}/api/auth/login`;
+      const response = await fetch(loginUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -223,7 +224,8 @@ function App() {
       });
 
       if (!response.ok) {
-        throw new Error('Login failed');
+        const bodyText = await response.text();
+        throw new Error(`Login failed (${response.status}) via ${loginUrl}: ${bodyText || response.statusText}`);
       }
 
       const data = (await response.json()) as {
@@ -245,8 +247,12 @@ function App() {
         username: data.user.username,
         role: data.user.role
       });
-    } catch {
-      setError('Unable to login. Check backend server and try again.');
+    } catch (caughtError: unknown) {
+      if (caughtError instanceof Error) {
+        setError(caughtError.message);
+      } else {
+        setError(`Unable to login via ${apiBaseUrl}/api/auth/login`);
+      }
     } finally {
       setIsLoading(false);
     }
