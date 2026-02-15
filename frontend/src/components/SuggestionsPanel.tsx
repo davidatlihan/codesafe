@@ -324,7 +324,6 @@ export default function SuggestionsPanel({
           Submit
         </button>
       </div>
-
       <div className="suggestions-list">
         {suggestions.map((suggestion) => (
           <div key={suggestion.id} className="suggestion-item">

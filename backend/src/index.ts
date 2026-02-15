@@ -735,6 +735,18 @@ function parseIncomingChatMessage(data: string): IncomingChatMessage | null {
   }
 }
 
+function toTextMessage(data: Buffer | ArrayBuffer | Buffer[]): string {
+  if (Array.isArray(data)) {
+    return Buffer.concat(data).toString('utf8');
+  }
+
+  if (data instanceof ArrayBuffer) {
+    return Buffer.from(data).toString('utf8');
+  }
+
+  return data.toString('utf8');
+}
+
 function scheduleProjectPersist(projectId: string, room: Room): void {
   room.persistRequested = true;
   if (room.persistTimer) {
@@ -940,7 +952,7 @@ wss.on('connection', (socket: WebSocket, req: IncomingMessage) => {
 
     socket.on('message', (rawData: Buffer | ArrayBuffer | Buffer[], isBinary: boolean) => {
       if (!isBinary) {
-        const data = rawData.toString();
+        const data = toTextMessage(rawData);
 
         if (data === 'ping') {
           socket.send('pong');

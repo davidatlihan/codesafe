@@ -60,6 +60,7 @@ function parseIncomingSocketMessage(raw: string): IncomingSocketMessage | null {
 export default function ChatPanel({ roomId, wsUrl, token }: ChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
+  const [isConnected, setIsConnected] = useState(false);
   const socketRef = useRef<WebSocket | null>(null);
 
   const wsAddress = useMemo(
@@ -68,6 +69,7 @@ export default function ChatPanel({ roomId, wsUrl, token }: ChatPanelProps) {
   );
 
   useEffect(() => {
+    setMessages([]);
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let reconnectAttempt = 0;
     let isDisposed = false;
@@ -117,15 +119,18 @@ export default function ChatPanel({ roomId, wsUrl, token }: ChatPanelProps) {
       socket.addEventListener('message', onMessage);
       socket.addEventListener('open', () => {
         reconnectAttempt = 0;
+        setIsConnected(true);
       });
       socket.addEventListener('close', () => {
         if (activeSocket === socket) {
           activeSocket = null;
           socketRef.current = null;
         }
+        setIsConnected(false);
         scheduleReconnect();
       });
       socket.addEventListener('error', () => {
+        setIsConnected(false);
         socket.close();
       });
     };
@@ -143,6 +148,7 @@ export default function ChatPanel({ roomId, wsUrl, token }: ChatPanelProps) {
         activeSocket.close();
       }
       socketRef.current = null;
+      setIsConnected(false);
     };
   }, [wsAddress]);
 
@@ -180,9 +186,12 @@ export default function ChatPanel({ roomId, wsUrl, token }: ChatPanelProps) {
         <input
           value={input}
           onChange={(event) => setInput(event.target.value)}
-          placeholder="Type message"
+          placeholder={isConnected ? 'Type message' : 'Connecting...'}
+          disabled={!isConnected}
         />
-        <button type="submit">Send</button>
+        <button type="submit" disabled={!isConnected}>
+          Send
+        </button>
       </form>
     </div>
   );

@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import ReactGridLayout, { WidthProvider } from 'react-grid-layout';
 import ChatPanel from './components/ChatPanel';
 import FileExplorer from './components/FileExplorer';
@@ -40,15 +40,12 @@ type GridLayoutItem = {
 
 const GridLayout = WidthProvider(ReactGridLayout);
 
-const LAYOUT_STORAGE_KEY = 'workspace-layout-v1';
-const HIDDEN_STORAGE_KEY = 'workspace-hidden-panels-v1';
-
 const DEFAULT_LAYOUT: GridLayoutItem[] = [
-  { i: 'explorer', x: 0, y: 0, w: 3, h: 10, minW: 2, minH: 6 },
-  { i: 'editor', x: 3, y: 0, w: 6, h: 10, minW: 4, minH: 6 },
-  { i: 'suggestions', x: 9, y: 0, w: 3, h: 5, minW: 2, minH: 4 },
-  { i: 'chat', x: 9, y: 5, w: 3, h: 3, minW: 2, minH: 3 },
-  { i: 'leaderboard', x: 9, y: 8, w: 3, h: 2, minW: 2, minH: 2 }
+  { i: 'explorer', x: 0, y: 0, w: 3, h: 14, minW: 2, minH: 6 },
+  { i: 'editor', x: 3, y: 0, w: 6, h: 14, minW: 4, minH: 6 },
+  { i: 'suggestions', x: 9, y: 0, w: 3, h: 7, minW: 2, minH: 4 },
+  { i: 'chat', x: 9, y: 7, w: 3, h: 4, minW: 2, minH: 3 },
+  { i: 'leaderboard', x: 9, y: 11, w: 3, h: 3, minW: 2, minH: 2 }
 ];
 
 const DEFAULT_HIDDEN: HiddenPanels = {
@@ -60,6 +57,14 @@ const DEFAULT_HIDDEN: HiddenPanels = {
 };
 const ALL_PANELS: PanelKey[] = ['explorer', 'editor', 'suggestions', 'chat', 'leaderboard'];
 
+function cloneDefaultLayout(): GridLayoutItem[] {
+  return DEFAULT_LAYOUT.map((item) => ({ ...item }));
+}
+
+function cloneDefaultHiddenPanels(): HiddenPanels {
+  return { ...DEFAULT_HIDDEN };
+}
+
 function toWsUrl(baseUrl: string): string {
   if (baseUrl.startsWith('https://')) {
     return `wss://${baseUrl.slice('https://'.length)}`;
@@ -70,6 +75,10 @@ function toWsUrl(baseUrl: string): string {
   }
 
   return baseUrl;
+}
+
+function trimTrailingSlashes(url: string): string {
+  return url.replace(/\/+$/, '');
 }
 
 function defaultApiBaseUrl(): string {
@@ -88,60 +97,6 @@ function defaultApiBaseUrl(): string {
   }
 
   return 'http://localhost:4000';
-}
-
-function safeReadLayout(): GridLayoutItem[] {
-  const raw = localStorage.getItem(LAYOUT_STORAGE_KEY);
-  if (!raw) {
-    return DEFAULT_LAYOUT;
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as GridLayoutItem[];
-    if (!Array.isArray(parsed)) {
-      return DEFAULT_LAYOUT;
-    }
-
-    const known = new Set(DEFAULT_LAYOUT.map((item) => item.i));
-    const validItems = parsed.filter((item): item is GridLayoutItem => {
-      return (
-        typeof item.i === 'string' &&
-        known.has(item.i) &&
-        typeof item.x === 'number' &&
-        typeof item.y === 'number' &&
-        typeof item.w === 'number' &&
-        typeof item.h === 'number'
-      );
-    });
-
-    if (validItems.length !== DEFAULT_LAYOUT.length) {
-      return DEFAULT_LAYOUT;
-    }
-
-    return validItems;
-  } catch {
-    return DEFAULT_LAYOUT;
-  }
-}
-
-function safeReadHiddenPanels(): HiddenPanels {
-  const raw = localStorage.getItem(HIDDEN_STORAGE_KEY);
-  if (!raw) {
-    return DEFAULT_HIDDEN;
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as Partial<HiddenPanels>;
-    return {
-      explorer: Boolean(parsed.explorer),
-      editor: Boolean(parsed.editor),
-      suggestions: Boolean(parsed.suggestions),
-      chat: Boolean(parsed.chat),
-      leaderboard: Boolean(parsed.leaderboard)
-    };
-  } catch {
-    return DEFAULT_HIDDEN;
-  }
 }
 
 function normalizeRoomId(rawValue: string): string {
@@ -169,20 +124,30 @@ function App() {
   const [projectError, setProjectError] = useState<string | null>(null);
   const [projects, setProjects] = useState<ListedRoom[]>([]);
   const [isProjectLoading, setIsProjectLoading] = useState(false);
-  const [layout, setLayout] = useState<GridLayoutItem[]>(safeReadLayout);
-  const [hiddenPanels, setHiddenPanels] = useState<HiddenPanels>(safeReadHiddenPanels);
+  const [layout, setLayout] = useState<GridLayoutItem[]>(cloneDefaultLayout);
+  const [hiddenPanels, setHiddenPanels] = useState<HiddenPanels>(cloneDefaultHiddenPanels);
   const [openTabs, setOpenTabs] = useState<OpenFileTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [editorLayoutVersion, setEditorLayoutVersion] = useState(0);
 
   const apiBaseUrl = useMemo(() => {
     const env = (import.meta as ImportMeta & { env: Record<string, string | undefined> }).env;
-    return env.VITE_API_URL ?? defaultApiBaseUrl();
+    return trimTrailingSlashes(env.VITE_API_URL ?? defaultApiBaseUrl());
   }, []);
 
   const wsBaseUrl = useMemo(() => {
     const env = (import.meta as ImportMeta & { env: Record<string, string | undefined> }).env;
-    return env.VITE_WS_URL ?? toWsUrl(apiBaseUrl);
+    return trimTrailingSlashes(toWsUrl(env.VITE_WS_URL ?? apiBaseUrl));
   }, [apiBaseUrl]);
+
+  useEffect(() => {
+    if (!selectedProjectId) {
+      return;
+    }
+
+    setLayout(cloneDefaultLayout());
+    setHiddenPanels(cloneDefaultHiddenPanels());
+  }, [selectedProjectId]);
 
   const resetOpenTabs = (): void => {
     setOpenTabs([]);
@@ -421,31 +386,25 @@ function App() {
   const handleLayoutChange = (nextLayout: GridLayoutItem[]): void => {
     setLayout((current) => {
       const byId = new Map(nextLayout.map((item) => [item.i, item]));
-      const merged = current.map((item) => byId.get(item.i) ?? item);
-      localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(merged));
-      return merged;
+      return current.map((item) => byId.get(item.i) ?? item);
     });
   };
 
   const closePanel = (panel: PanelKey): void => {
     setHiddenPanels((current) => {
-      const nextPanels = {
+      return {
         ...current,
         [panel]: true
       };
-      localStorage.setItem(HIDDEN_STORAGE_KEY, JSON.stringify(nextPanels));
-      return nextPanels;
     });
   };
 
   const reopenPanel = (panel: PanelKey): void => {
     setHiddenPanels((current) => {
-      const nextPanels = {
+      return {
         ...current,
         [panel]: false
       };
-      localStorage.setItem(HIDDEN_STORAGE_KEY, JSON.stringify(nextPanels));
-      return nextPanels;
     });
   };
 
@@ -587,6 +546,9 @@ function App() {
         draggableHandle=".panel-header"
         draggableCancel=".panel-header button"
         onLayoutChange={handleLayoutChange}
+        onResizeStop={() => {
+          setEditorLayoutVersion((current) => current + 1);
+        }}
       >
         {!hiddenPanels.explorer ? (
           <section key="explorer" className="panel">
@@ -621,6 +583,7 @@ function App() {
                 username={auth.username}
                 openFiles={openTabs}
                 activeFileId={activeTabId}
+                layoutVersion={editorLayoutVersion}
                 onActiveFileChange={setActiveTabId}
                 onCloseFile={handleCloseTab}
               />

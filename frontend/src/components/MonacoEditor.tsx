@@ -21,6 +21,7 @@ type MonacoEditorProps = {
   username: string;
   openFiles: OpenFileTab[];
   activeFileId: string | null;
+  layoutVersion?: number;
   onActiveFileChange: (fileId: string | null) => void;
   onCloseFile: (fileId: string) => void;
 };
@@ -127,10 +128,12 @@ export default function MonacoEditor({
   username,
   openFiles,
   activeFileId,
+  layoutVersion = 0,
   onActiveFileChange,
   onCloseFile
 }: MonacoEditorProps) {
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
+  const editorAliveRef = useRef(false);
   const editorBodyRef = useRef<HTMLDivElement | null>(null);
   const monacoRef = useRef<typeof Monaco | null>(null);
   const [isEditorReady, setIsEditorReady] = useState(false);
@@ -151,6 +154,14 @@ export default function MonacoEditor({
 
   const handleEditorMount: OnMount = (editor, monaco) => {
     editorRef.current = editor;
+    editorAliveRef.current = true;
+    editor.onDidDispose(() => {
+      editorAliveRef.current = false;
+      if (editorRef.current === editor) {
+        editorRef.current = null;
+      }
+      setIsEditorReady(false);
+    });
     monacoRef.current = monaco;
     setIsEditorReady(true);
   };
@@ -210,12 +221,49 @@ export default function MonacoEditor({
     }
 
     const editor = editorRef.current;
+    if (!editor) {
+      return;
+    }
+
+    const safeRelayout = (): void => {
+      if (!editorAliveRef.current || editorRef.current !== editor) {
+        return;
+      }
+      editor.layout();
+      editor.render(true);
+    };
+
+    let innerFrame: number | null = null;
+    const frame = requestAnimationFrame(() => {
+      safeRelayout();
+      innerFrame = requestAnimationFrame(() => {
+        safeRelayout();
+      });
+    });
+
+    return () => {
+      cancelAnimationFrame(frame);
+      if (innerFrame !== null) {
+        cancelAnimationFrame(innerFrame);
+      }
+    };
+  }, [isEditorReady, layoutVersion]);
+
+  useEffect(() => {
+    if (!isEditorReady) {
+      return;
+    }
+
+    const editor = editorRef.current;
     const container = editorBodyRef.current;
     if (!editor || !container) {
       return;
     }
 
     const relayout = (): void => {
+      if (!editorAliveRef.current || editorRef.current !== editor) {
+        return;
+      }
       editor.layout();
       editor.render(true);
     };
@@ -483,6 +531,10 @@ export default function MonacoEditor({
       return;
     }
 
+    // Always tear down the current binding before model set changes/disposal.
+    activeBindingRef.current?.destroy();
+    activeBindingRef.current = null;
+
     const openIdSet = new Set(openFiles.map((file) => file.id));
 
     for (const [fileId, model] of modelsRef.current.entries()) {
@@ -490,7 +542,9 @@ export default function MonacoEditor({
         if (editor.getModel() === model) {
           editor.setModel(null);
         }
-        model.dispose();
+        if (!model.isDisposed()) {
+          model.dispose();
+        }
         modelsRef.current.delete(fileId);
 
         const text = yFiles.get(fileId);
@@ -512,10 +566,19 @@ export default function MonacoEditor({
         });
       }
 
-      const existingModel = modelsRef.current.get(file.id);
+      let existingModel = modelsRef.current.get(file.id);
+      if (existingModel?.isDisposed()) {
+        modelsRef.current.delete(file.id);
+        existingModel = undefined;
+      }
+
       if (!existingModel && yText) {
         const uri = monaco.Uri.parse(`inmemory://model/${encodeURIComponent(file.id)}`);
-        const model = monaco.editor.createModel(yText.toString(), inferLanguage(file.name, defaultLanguage), uri);
+        const foundModel = monaco.editor.getModel(uri);
+        const model =
+          foundModel && !foundModel.isDisposed()
+            ? foundModel
+            : monaco.editor.createModel(yText.toString(), inferLanguage(file.name, defaultLanguage), uri);
         modelsRef.current.set(file.id, model);
       }
 
@@ -550,7 +613,7 @@ export default function MonacoEditor({
       }
 
       const model = modelsRef.current.get(file.id);
-      if (model) {
+      if (model && !model.isDisposed()) {
         monaco.editor.setModelLanguage(model, inferLanguage(file.name, defaultLanguage));
       }
     }
@@ -568,15 +631,13 @@ export default function MonacoEditor({
     }
 
     if (!nextActiveId) {
-      activeBindingRef.current?.destroy();
-      activeBindingRef.current = null;
       editor.setModel(null);
       return;
     }
 
     const nextModel = modelsRef.current.get(nextActiveId);
     const nextYText = yFiles.get(nextActiveId);
-    if (!nextModel || !nextYText) {
+    if (!nextModel || nextModel.isDisposed() || !nextYText) {
       return;
     }
 
@@ -584,8 +645,11 @@ export default function MonacoEditor({
       editor.setModel(nextModel);
     }
 
-    activeBindingRef.current?.destroy();
-    activeBindingRef.current = new MonacoBinding(nextYText, nextModel, new Set([editor]), awareness);
+    try {
+      activeBindingRef.current = new MonacoBinding(nextYText, nextModel, new Set([editor]), awareness);
+    } catch {
+      editor.setModel(null);
+    }
   }, [activeFileId, defaultLanguage, onActiveFileChange, openFiles]);
 
   const addInlineComment = (line: number): void => {
