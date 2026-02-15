@@ -171,15 +171,8 @@ function App() {
   const [isProjectLoading, setIsProjectLoading] = useState(false);
   const [layout, setLayout] = useState<GridLayoutItem[]>(safeReadLayout);
   const [hiddenPanels, setHiddenPanels] = useState<HiddenPanels>(safeReadHiddenPanels);
-  const [openTabs, setOpenTabs] = useState<OpenFileTab[]>(() => [
-    {
-      id: defaultLanguage === 'python' ? 'main-py' : 'main-js',
-      name: defaultLanguage === 'python' ? 'main.py' : 'main.js'
-    }
-  ]);
-  const [activeTabId, setActiveTabId] = useState<string | null>(() =>
-    defaultLanguage === 'python' ? 'main-py' : 'main-js'
-  );
+  const [openTabs, setOpenTabs] = useState<OpenFileTab[]>([]);
+  const [activeTabId, setActiveTabId] = useState<string | null>(null);
 
   const apiBaseUrl = useMemo(() => {
     const env = (import.meta as ImportMeta & { env: Record<string, string | undefined> }).env;
@@ -192,10 +185,8 @@ function App() {
   }, [apiBaseUrl]);
 
   const resetOpenTabs = (): void => {
-    const defaultId = defaultLanguage === 'python' ? 'main-py' : 'main-js';
-    const defaultName = defaultLanguage === 'python' ? 'main.py' : 'main.js';
-    setOpenTabs([{ id: defaultId, name: defaultName }]);
-    setActiveTabId(defaultId);
+    setOpenTabs([]);
+    setActiveTabId(null);
   };
 
   const applyRoomChange = (nextRoomRaw: string): void => {

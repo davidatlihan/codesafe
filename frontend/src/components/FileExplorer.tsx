@@ -107,19 +107,6 @@ export default function FileExplorer({ roomId, wsUrl, token, onOpenFile }: FileE
     nodesRef.current = nodes;
     rootIdsRef.current = rootIds;
 
-    if (rootIds.length === 0) {
-      yDoc.transact(() => {
-        const rootId = randomId();
-        const rootNode = new Y.Map<unknown>();
-        rootNode.set('name', 'project');
-        rootNode.set('kind', 'folder');
-        rootNode.set('parentId', null);
-        rootNode.set('children', new Y.Array<string>());
-        nodes.set(rootId, rootNode);
-        rootIds.push([rootId]);
-      });
-    }
-
     const onDocUpdate = (update: Uint8Array, origin: unknown): void => {
       if (origin === wsOrigin || !socket || socket.readyState !== WebSocket.OPEN) {
         return;

@@ -131,6 +131,7 @@ export default function MonacoEditor({
   onCloseFile
 }: MonacoEditorProps) {
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
+  const editorBodyRef = useRef<HTMLDivElement | null>(null);
   const monacoRef = useRef<typeof Monaco | null>(null);
   const [isEditorReady, setIsEditorReady] = useState(false);
 
@@ -200,6 +201,41 @@ export default function MonacoEditor({
     return () => {
       hoverDisposablesRef.current.forEach((disposable) => disposable.dispose());
       hoverDisposablesRef.current = [];
+    };
+  }, [isEditorReady]);
+
+  useEffect(() => {
+    if (!isEditorReady) {
+      return;
+    }
+
+    const editor = editorRef.current;
+    const container = editorBodyRef.current;
+    if (!editor || !container) {
+      return;
+    }
+
+    const relayout = (): void => {
+      editor.layout();
+      editor.render(true);
+    };
+
+    relayout();
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', relayout);
+      return () => {
+        window.removeEventListener('resize', relayout);
+      };
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      relayout();
+    });
+    resizeObserver.observe(container);
+
+    return () => {
+      resizeObserver.disconnect();
     };
   }, [isEditorReady]);
 
@@ -663,7 +699,7 @@ export default function MonacoEditor({
           </button>
         ))}
       </div>
-      <div className="editor-body">
+      <div ref={editorBodyRef} className="editor-body">
         {openFiles.length === 0 ? (
           <div className="editor-empty">Open a file from the explorer.</div>
         ) : (
