@@ -657,7 +657,7 @@ export default function MonacoEditor({
     } catch {
       editor.setModel(null);
     }
-  }, [activeFileId, defaultLanguage, onActiveFileChange, openFiles]);
+  }, [activeFileId, defaultLanguage, isEditorReady, onActiveFileChange, openFiles]);
 
   useEffect(() => {
     if (!onActiveFileContextChange) {
