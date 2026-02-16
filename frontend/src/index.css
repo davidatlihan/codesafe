@@ -257,11 +257,6 @@ textarea {
   font-size: 0.82rem;
 }
 
-.console-warning {
-  padding: 0.35rem var(--space-2);
-  border-bottom: 1px solid var(--line);
-  font-size: 0.82rem;
-}
 
 .leaderboard-list {
   width: 100%;

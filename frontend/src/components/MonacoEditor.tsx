@@ -816,24 +816,23 @@ export default function MonacoEditor({
         ))}
       </div>
       <div ref={editorBodyRef} className="editor-body">
+        <Editor
+          defaultLanguage={defaultLanguage}
+          defaultValue=""
+          height="100%"
+          onMount={handleEditorMount}
+          options={{
+            lineNumbers: 'on',
+            glyphMargin: true,
+            minimap: { enabled: false },
+            scrollBeyondLastLine: false,
+            automaticLayout: true
+          }}
+          theme="vs"
+        />
         {openFiles.length === 0 ? (
           <div className="editor-empty">Open a file from the explorer.</div>
-        ) : (
-          <Editor
-            defaultLanguage={defaultLanguage}
-            defaultValue=""
-            height="100%"
-            onMount={handleEditorMount}
-            options={{
-              lineNumbers: 'on',
-              glyphMargin: true,
-              minimap: { enabled: false },
-              scrollBeyondLastLine: false,
-              automaticLayout: true
-            }}
-            theme="vs"
-          />
-        )}
+        ) : null}
       </div>
     </div>
   );

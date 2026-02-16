@@ -139,7 +139,17 @@ function dedupeProjectsById(projects: ListedRoom[]): ListedRoom[] {
       byId.set(project.id, project);
     }
   }
-  return Array.from(byId.values()).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+
+  const byName = new Map<string, ListedRoom>();
+  for (const project of byId.values()) {
+    const normalizedName = project.name.trim().toLowerCase();
+    const existing = byName.get(normalizedName);
+    if (!existing || project.updatedAt > existing.updatedAt) {
+      byName.set(normalizedName, project);
+    }
+  }
+
+  return Array.from(byName.values()).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
 function App() {
@@ -320,7 +330,9 @@ function App() {
     if (selectedProjectId === projectId) {
       setSelectedProjectId(null);
       clearRoomQueryParam();
+      resetOpenTabs();
     }
+    setProjects((current) => current.filter((project) => project.id !== projectId));
     setProjectError(null);
     await refreshProjects(auth.token);
   };

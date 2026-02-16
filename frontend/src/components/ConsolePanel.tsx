@@ -128,7 +128,6 @@ export default function ConsolePanel({
           </button>
         </div>
       </div>
-      <div className="console-warning">Note: for console runs, click a file tab twice before running.</div>
       <pre className="console-output">{output || 'Console output will appear here.'}</pre>
     </div>
   );
