@@ -634,7 +634,6 @@ export default function MonacoEditor({
 
     if (nextActiveId !== activeFileId) {
       onActiveFileChange(nextActiveId);
-      return;
     }
 
     if (!nextActiveId) {

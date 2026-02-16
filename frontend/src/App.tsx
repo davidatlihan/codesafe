@@ -119,17 +119,37 @@ function normalizeRoomId(rawValue: string): string {
   return sanitized;
 }
 
+function clearRoomQueryParam(): void {
+  const nextQuery = new URLSearchParams(window.location.search);
+  nextQuery.delete('room');
+  const queryText = nextQuery.toString();
+  const nextUrl = queryText ? `${window.location.pathname}?${queryText}` : window.location.pathname;
+  window.history.replaceState({}, '', nextUrl);
+}
+
+function dedupeProjectsById(projects: ListedRoom[]): ListedRoom[] {
+  const byId = new Map<string, ListedRoom>();
+  for (const project of projects) {
+    const existing = byId.get(project.id);
+    if (!existing) {
+      byId.set(project.id, project);
+      continue;
+    }
+    if (project.updatedAt > existing.updatedAt) {
+      byId.set(project.id, project);
+    }
+  }
+  return Array.from(byId.values()).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
 function App() {
   const query = new URLSearchParams(window.location.search);
-  const initialRoomId = normalizeRoomId(query.get('room') ?? '');
   const defaultLanguage = query.get('lang') === 'python' ? 'python' : 'javascript';
   const [username, setUsername] = useState('');
   const [auth, setAuth] = useState<AuthState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
-    initialRoomId || null
-  );
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [projectNameInput, setProjectNameInput] = useState('');
   const [projectError, setProjectError] = useState<string | null>(null);
   const [projects, setProjects] = useState<ListedRoom[]>([]);
@@ -198,7 +218,7 @@ function App() {
       if (!Array.isArray(data.projects)) {
         return;
       }
-      setProjects(data.projects);
+      setProjects(dedupeProjectsById(data.projects));
     } catch {
       // Ignore project list refresh errors in UI.
     } finally {
@@ -299,6 +319,7 @@ function App() {
     }
     if (selectedProjectId === projectId) {
       setSelectedProjectId(null);
+      clearRoomQueryParam();
     }
     setProjectError(null);
     await refreshProjects(auth.token);
@@ -536,7 +557,13 @@ function App() {
         <button type="button" onClick={handleDownloadProject}>
           Download Project
         </button>
-        <button type="button" onClick={() => setSelectedProjectId(null)}>
+        <button
+          type="button"
+          onClick={() => {
+            setSelectedProjectId(null);
+            clearRoomQueryParam();
+          }}
+        >
           Change Project
         </button>
         {panelMeta
